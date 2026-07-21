@@ -1,9 +1,13 @@
 """앱 아이콘 생성 스크립트 (favicon + PWA 아이콘 + 데스크톱 바로가기용 .ico)
 
-작은 크기(16~32px)에서도 또렷하게 보이도록, 핵심 심볼(큰 "A")을 하나로
-단순화하고 고해상도(1024px)에서 그린 뒤 고품질로 축소하는 방식을 씁니다.
-"가"는 작은 배지로만 곁들여서, 큰 아이콘에서는 한/영 컨셉이 보이고
-작은 아이콘에서는 자연스럽게 사라지도록 했습니다.
+작은 크기(16px)에서도 또렷하게 보이도록, 심볼을 큼직한 흰색 "A" 하나만
+쓰고 고해상도(1024px)에서 그린 뒤 고품질로 축소하는 방식을 씁니다.
+
+이전 버전은 "A" + 작은 "가" 배지 두 요소를 같이 그렸는데, 16px처럼 아주
+작은 크기로 축소하면 두 요소가 뭉개져서 하나로 뭉치는 문제가 있었습니다
+(Chrome 앱 창의 taskbar 아이콘이 정확히 이 16px 프레임을 사용해서 뭉개진
+채로 보였던 게 실제 원인이었습니다). 요소를 하나로 줄이면 모든 크기에서
+같은 모양이 그대로 축소되므로 이 문제 자체가 생기지 않습니다.
 """
 from PIL import Image, ImageDraw, ImageFont
 
@@ -47,20 +51,9 @@ def centered_text(draw, text, font, cx, cy, fill):
 def draw_wordmark(img, size):
     draw = ImageDraw.Draw(img)
 
-    # 메인 심볼: 큼직한 흰색 "A" (작은 크기에서도 확실히 보이도록 크고 굵게)
-    font_a = ImageFont.truetype(FONT_PATH, int(size * 0.60))
+    # 심볼은 큼직한 흰색 "A" 하나만 사용 (16px까지도 뭉개지지 않도록 단순화)
+    font_a = ImageFont.truetype(FONT_PATH, int(size * 0.62))
     centered_text(draw, "A", font_a, size * 0.5, size * 0.5, WHITE)
-
-    # 보조 배지: 오른쪽 아래에 작은 흰 원 + 보라색 "가" (한/영 컨셉, 포인트 요소)
-    badge_r = size * 0.205
-    badge_cx = size * 0.755
-    badge_cy = size * 0.755
-    draw.ellipse(
-        [badge_cx - badge_r, badge_cy - badge_r, badge_cx + badge_r, badge_cy + badge_r],
-        fill=(255, 255, 255, 255),
-    )
-    font_kr = ImageFont.truetype(FONT_PATH, int(badge_r * 1.35))
-    centered_text(draw, "가", font_kr, badge_cx, badge_cy * 1.01, PRIMARY_DARK)
 
     return img
 
