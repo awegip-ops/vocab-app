@@ -73,8 +73,12 @@ def main():
     targets = {
         "icons/icon-512.png": 512,
         "icons/icon-192.png": 192,
+        "icons/icon-128.png": 128,
         "icons/apple-touch-icon.png": 180,
+        "icons/icon-64.png": 64,
+        "icons/icon-48.png": 48,
         "icons/icon-32.png": 32,
+        "icons/icon-16.png": 16,
     }
     for path, s in targets.items():
         icon.resize((s, s), Image.LANCZOS).save(path)
