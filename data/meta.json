@@ -1,0 +1,25 @@
+{
+  "levels": [
+    {"level": 0, "name": "Level 0", "label": "생활 기초", "categories": ["life"], "unlockThreshold": 0},
+    {"level": 1, "name": "Level 1", "label": "기초 필수", "categories": ["general"], "unlockThreshold": 0.8},
+    {"level": 2, "name": "Level 2", "label": "비즈니스 핵심", "categories": ["hr","office","meeting","contract","marketing","finance","production","logistics","travel","realestate","it","benefits"], "unlockThreshold": 0.8},
+    {"level": 3, "name": "Level 3", "label": "900점 고난도", "categories": ["advanced"], "unlockThreshold": 0.8}
+  ],
+  "categoryLabels": {
+    "life": "생활 기초",
+    "general": "일반 필수",
+    "hr": "인사/채용",
+    "office": "사무/행정",
+    "meeting": "회의/협상",
+    "contract": "계약/법률",
+    "marketing": "마케팅/광고",
+    "finance": "재무/회계",
+    "production": "생산/품질",
+    "logistics": "물류/배송",
+    "travel": "여행/출장",
+    "realestate": "부동산/시설",
+    "it": "IT/기술",
+    "benefits": "건강/복지",
+    "advanced": "900점 고난도"
+  }
+}
