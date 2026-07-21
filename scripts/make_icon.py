@@ -79,14 +79,18 @@ def main():
     for path, s in targets.items():
         icon.resize((s, s), Image.LANCZOS).save(path)
 
-    # 파비콘/바로가기용 .ico - 각 크기를 마스터에서 직접 축소해 또렷하게
-    sizes = [16, 24, 32, 48, 64, 128, 256]
-    imgs = [icon.resize((s, s), Image.LANCZOS) for s in sizes]
-    imgs[0].save(
+    # 파비콘/바로가기용 .ico - 윈도우 화면 배율(100~250%)별로 실제 요청되는
+    # 모든 크기를 다 포함시켜서, 딱 맞는 크기가 없어 억지로 확대되는 일이 없게 함
+    #
+    # 중요: Pillow의 ICO 저장은 "고해상도 원본 이미지 하나"에 sizes 목록을
+    # 넘겨야 각 크기를 원본에서 축소해서 만들어줍니다. (작게 미리 축소한
+    # 이미지를 append_images로 넘기면 그 작은 크기보다 큰 항목은 전부
+    # 조용히 무시되어버립니다 - 이게 지금까지 흐릿했던 진짜 원인이었습니다.)
+    sizes = [16, 20, 24, 28, 32, 40, 48, 56, 60, 64, 72, 80, 96, 128, 256]
+    icon.save(
         "icons/favicon.ico",
         format="ICO",
         sizes=[(s, s) for s in sizes],
-        append_images=imgs[1:],
     )
 
     print("done")
