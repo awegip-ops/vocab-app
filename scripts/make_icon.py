@@ -4,13 +4,14 @@
 
 이전 버전들의 문제:
 1) "A" + 작은 "가" 배지 두 요소 -> 16px에서 서로 겹쳐 뭉개짐 (제거함)
-2) 1024px 마스터 이미지 하나를 모든 크기로 축소 -> 글자를 큰 해상도로
-   그린 뒤 16~32px처럼 아주 작은 크기로 한 번에 축소(64배 축소)하면,
-   트루타입 폰트의 "힌팅"(작은 크기에서 획을 픽셀 격자에 맞춰주는 보정)이
-   전혀 적용되지 않아 획이 흐릿하고 지저분해 보였습니다.
-   -> 각 크기를 "그 크기 그대로" 직접 렌더링하도록 바꿔서, 폰트 힌팅이
-   해당 크기에 맞게 정상적으로 적용되게 했습니다. 배경(둥근 사각형)만
-   경계선이 매끈하도록 4배 슈퍼샘플링 후 축소합니다.
+2) 폰트(맑은 고딕)로 그린 "A"를 1024px에서 16~32px로 축소 -> 폰트 힌팅이
+   빠져서 획이 흐릿함. 크기별로 직접 그려도 여전히 폰트 자체의 획 굵기가
+   가늘어서 (한글 폰트라 라틴 알파벳 최적화가 아님) 작은 크기에서 또렷함이
+   부족했습니다.
+   -> 폰트를 아예 쓰지 않고, "A"를 두꺼운 다각형(삼각형 두 다리 + 가로줄)
+   으로 직접 그리는 방식으로 바꿨습니다. 다각형은 폰트 힌팅과 무관하게
+   벡터 형태 그대로이므로, 큰 해상도로 그려서 축소해도(슈퍼샘플링 안티
+   앨리어싱) 항상 두껍고 또렷합니다.
 3) Pillow의 Image.save(format="ICO", sizes=[...])는 넘겨준 이미지 "하나"를
    각 크기로 리사이즈할 뿐이라, 프레임마다 다른 원본을 쓸 수 없습니다.
    -> favicon.ico는 각 크기별로 직접 렌더링한 PNG들을 모아 ICO 파일
@@ -19,17 +20,16 @@
 import io
 import struct
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
 PRIMARY = (79, 70, 229)       # #4f46e5
 PRIMARY_DARK = (67, 56, 202)  # #4338ca
 WHITE = (255, 255, 255, 255)
 
-FONT_PATH = r"C:\Windows\Fonts\malgunbd.ttf"
+SUPERSAMPLE = 1024  # 항상 이 해상도로 그린 뒤 목표 크기로 축소
 
 
-def make_background(size, supersample=4):
-    big = size * supersample
+def make_background(big):
     img = Image.new("RGBA", (big, big), (0, 0, 0, 0))
     px = img.load()
     for y in range(big):
@@ -47,25 +47,36 @@ def make_background(size, supersample=4):
     radius = int(big * 0.225)
     mdraw.rounded_rectangle([0, 0, big - 1, big - 1], radius=radius, fill=255)
     img.putalpha(mask)
+    return img
 
-    return img.resize((size, size), Image.LANCZOS)
+
+def pt(u, v, big):
+    return (u * big, v * big)
 
 
-def centered_text(draw, text, font, cx, cy, fill):
-    bbox = draw.textbbox((0, 0), text, font=font)
-    w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-    x = cx - w / 2 - bbox[0]
-    y = cy - h / 2 - bbox[1]
-    draw.text((x, y), text, font=font, fill=fill)
+def draw_bold_a(draw, big):
+    # 굵은 기하학적 "A": 왼쪽 다리 / 오른쪽 다리 / 가로줄, 세 다각형으로 구성
+    apex = (0.50, 0.06)
+    outer_bl = (0.08, 0.94)
+    inner_bl = (0.29, 0.94)
+    inner_apex = (0.50, 0.42)
+    outer_br = (0.92, 0.94)
+    inner_br = (0.71, 0.94)
+
+    left_leg = [apex, outer_bl, inner_bl, inner_apex]
+    right_leg = [apex, outer_br, inner_br, inner_apex]
+    crossbar = [(0.17, 0.62), (0.83, 0.62), (0.83, 0.78), (0.17, 0.78)]
+
+    for poly in (left_leg, right_leg, crossbar):
+        draw.polygon([pt(u, v, big) for u, v in poly], fill=WHITE)
 
 
 def render_icon(size):
-    img = make_background(size)
+    big = SUPERSAMPLE
+    img = make_background(big)
     draw = ImageDraw.Draw(img)
-    # 폰트를 이 크기 그대로 로드해서 그려야 작은 크기용 힌팅이 적용됨
-    font_a = ImageFont.truetype(FONT_PATH, max(1, int(size * 0.62)))
-    centered_text(draw, "A", font_a, size * 0.5, size * 0.5, WHITE)
-    return img
+    draw_bold_a(draw, big)
+    return img.resize((size, size), Image.LANCZOS)
 
 
 def build_ico(path, sizes):
