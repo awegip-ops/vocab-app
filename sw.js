@@ -2,7 +2,7 @@
 // 네트워크 우선 + 캐시 폴백: 온라인이면 항상 최신 파일을 받고, 오프라인이면
 // 마지막으로 받아둔 캐시로 동작합니다.
 
-const CACHE_VERSION = "v1";
+const CACHE_VERSION = "v2";
 const CACHE_NAME = `vocab-cache-${CACHE_VERSION}`;
 
 const CORE_ASSETS = [

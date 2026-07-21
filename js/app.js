@@ -271,9 +271,7 @@ function masteryDotClass(word) {
 
 function speak(text) {
   if (!("speechSynthesis" in window)) return;
-  const utter = new SpeechSynthesisUtterance(text);
-  utter.lang = "en-US";
-  utter.rate = 0.95;
+  const utter = makeUtterance(text, "en-US", 0.95);
   window.speechSynthesis.cancel();
   window.speechSynthesis.speak(utter);
 }
@@ -1018,7 +1016,23 @@ if ("speechSynthesis" in window) {
 }
 
 function pickVoice(langPrefix) {
-  return VOICES.find((v) => v.lang && v.lang.toLowerCase().startsWith(langPrefix.toLowerCase()));
+  const candidates = VOICES.filter(
+    (v) => v.lang && v.lang.toLowerCase().startsWith(langPrefix.toLowerCase())
+  );
+  if (!candidates.length) return null;
+  // 토익 리스닝처럼 또렷하고 자연스러운 음성을 우선 선택
+  // (Google/Microsoft의 고품질 온라인 음성 > 신경망 음성 > 일반 로컬 음성 순)
+  const preferredPatterns = [
+    /google/i,
+    /online.*natural/i,
+    /natural/i,
+    /\b(aria|guy|jenny|jane|libby|ryan|sonia)\b/i,
+  ];
+  for (const pattern of preferredPatterns) {
+    const match = candidates.find((v) => pattern.test(v.name));
+    if (match) return match;
+  }
+  return candidates[0];
 }
 
 function makeUtterance(text, lang, rate) {
