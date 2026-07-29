@@ -26,6 +26,26 @@
    }
    ```
    (익명 로그인한 사용자만 접근 가능하고, 정확한 6자리 코드를 알아야 해당 문서에 접근할 수 있습니다.)
+
+   > **참고 — 더 안전하게 하려면**: 위 규칙은 6자리 코드(약 12억 조합)를 아는 사람이면 누구나
+   > 접근할 수 있다는 뜻이고, 코드 만료 기한이 없습니다. 개인 사용에는 충분하지만, 더 보수적으로
+   > 가려면 "90일 이상 동기화가 없었던 코드는 자동으로 접근 차단" 규칙으로 바꿀 수 있습니다:
+   > ```
+   > rules_version = '2';
+   > service cloud.firestore {
+   >   match /databases/{database}/documents {
+   >     match /syncCodes/{code} {
+   >       allow read, write: if request.auth != null
+   >         && (!("updatedAt" in resource.data)
+   >             || request.time < resource.data.updatedAt + duration.value(90, 'd'));
+   >     }
+   >   }
+   > }
+   > ```
+   > 이 방식은 90일 넘게 안 쓴 동기화 코드가 자동으로 무효화되어, 예전에 코드가 유출됐더라도
+   > 위험이 계속 남지 않게 해줍니다. 앱 쪽은 이미 동기화 실패를 조용히 처리하도록(로컬 저장은
+   > 그대로 유지) 되어 있어 코드가 만료돼도 앱이 깨지지 않습니다. 적용은 Firebase 콘솔 규칙
+   > 탭에서 직접 붙여넣고 게시해야 하며, 계정 로그인이 필요해 대신 해드릴 수 없습니다.
 5. 왼쪽 메뉴 **빌드 > Authentication** → **시작하기** → **Sign-in method** 탭 → **익명(Anonymous)** 클릭 → 사용 설정 → 저장
 6. 왼쪽 위 톱니바퀴 ⚙️ → **프로젝트 설정** → 아래로 스크롤 **내 앱** → 웹 아이콘(`</>`) 클릭 → 앱 닉네임 입력(예: `web`) → 앱 등록
 7. 화면에 나오는 `firebaseConfig` 객체를 복사
@@ -54,7 +74,7 @@
 1. https://vercel.com 접속 → GitHub 계정(없으면 새로 만들기)으로 가입
 2. 이 폴더(`영어단어장`)를 GitHub 저장소에 올려야 합니다. 터미널에서:
    ```
-   cd "C:\Users\tast\Desktop\영어단어장"
+   cd "C:\Users\tast\Desktop\제작 앱\영어단어장"
    git init
    git add .
    git commit -m "Initial commit"

@@ -2,19 +2,32 @@
 // 네트워크 우선 + 캐시 폴백: 온라인이면 항상 최신 파일을 받고, 오프라인이면
 // 마지막으로 받아둔 캐시로 동작합니다.
 
-const CACHE_VERSION = "v2";
+// 주의: CORE_ASSETS의 버전 쿼리스트링(?v=)은 각 파일을 실제로 import/참조하는
+// 곳(index.html의 <link>/<script> 태그, js/*.js 파일 상단의 import 문)에 적힌
+// 값과 항상 동일해야 합니다. 그 중 하나라도 바꾸면 CACHE_VERSION도 함께 올려서
+// 이전 버전이 섞인 캐시를 전부 폐기하세요. (버전이 어긋나면 프리캐시 항목이
+// 실제 요청 URL과 매칭되지 않아 캐시 무효화가 되지 않는 채로 쌓입니다.)
+const CACHE_VERSION = "v4";
 const CACHE_NAME = `vocab-cache-${CACHE_VERSION}`;
 
 const CORE_ASSETS = [
   "./",
   "./index.html",
   "./manifest.json",
-  "./css/style.css",
-  "./js/app.js",
+  "./css/style.css?v=13",
+  "./js/app.js?v=14",
+  "./js/state.js?v=1",
+  "./js/utils.js?v=1",
+  "./js/dom.js?v=1",
+  "./js/ui.js?v=1",
+  "./js/sync-bridge.js?v=1",
+  "./js/tts.js?v=1",
+  "./js/views.js?v=1",
+  "./js/study.js?v=1",
   "./js/srs.js",
   "./js/storage.js",
-  "./js/sync.js",
-  "./js/firebase-config.js",
+  "./js/sync.js?v=2",
+  "./js/firebase-config.js?v=2",
   "./data/words.json",
   "./data/glossary.json",
   "./data/meta.json",

@@ -1,0 +1,8 @@
+{
+  "name": "toeic-900-vocab-app",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/srs.test.js test/storage.test.js"
+  }
+}
