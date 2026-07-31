@@ -17,7 +17,7 @@ import {
   buildReviewQueue,
 } from "./state.js?v=1";
 import { collectLocalState, mergeRemoteState, syncPush, refreshIfIdle } from "./sync-bridge.js?v=1";
-import { speak, startListening } from "./tts.js?v=1";
+import { speak, startListening, startListeningFromBeginning } from "./tts.js?v=1";
 import { startSession } from "./study.js?v=1";
 
 const PART_SIZE = 100;
@@ -230,7 +230,8 @@ function renderPartDetail(level, category, partIndex) {
     )} · Part ${partIndex + 1}</div><div></div></div>
     <div class="chapter-actions">
       <button class="btn btn-primary" id="btn-study-chapter">이 파트 학습하기 (${words.length}개)</button>
-      <button class="btn btn-listen" id="btn-listen-chapter">🎧 이 파트 듣기 모드</button>
+      <button class="btn btn-listen" id="btn-listen-chapter">🎧 이 파트 듣기 모드 (이어듣기)</button>
+      <button class="btn btn-listen-restart" id="btn-listen-chapter-restart">🔁 처음부터 듣기</button>
       <label class="shuffle-toggle"><input type="checkbox" id="chk-study-shuffle"/> 🔀 랜덤 순서로 학습</label>
       <div class="chapter-sub">횟수 제한 없이 몇 번이든 반복해서 학습할 수 있습니다</div>
     </div>
@@ -249,8 +250,14 @@ function renderPartDetail(level, category, partIndex) {
     startSession(queue);
   });
 
+  const chapterId = `${level}:${category}:${partIndex}`;
+
   document.getElementById("btn-listen-chapter").addEventListener("click", () => {
-    startListening(words, true);
+    startListening(words, true, chapterId);
+  });
+
+  document.getElementById("btn-listen-chapter-restart").addEventListener("click", () => {
+    startListeningFromBeginning(words, true, chapterId);
   });
 
   root.querySelectorAll(".word-row").forEach((el, idx) => {

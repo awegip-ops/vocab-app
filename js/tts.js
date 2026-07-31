@@ -3,6 +3,7 @@ import { escapeHtml, freqBadge, shuffleArray } from "./utils.js?v=1";
 import { root } from "./dom.js?v=1";
 import { toast } from "./ui.js?v=1";
 import { renderHome } from "./views.js?v=1";
+import { loadListenProgress, saveListenProgress, clearListenProgress } from "./storage.js?v=1";
 
 let VOICES = [];
 function loadVoices() {
@@ -49,7 +50,7 @@ export function speak(text) {
   window.speechSynthesis.speak(utter);
 }
 
-let LISTEN = null; // { words, originalWords, index, playing, loop, shuffled, finished }
+let LISTEN = null; // { words, originalWords, index, playing, loop, shuffled, finished, chapterId }
 
 export function isListening() {
   return !!LISTEN;
@@ -78,7 +79,9 @@ function buildListenQueueFrom(words, startIndex) {
   return utterances;
 }
 
-export function startListening(words, loop) {
+// chapterId가 있으면 이전에 듣다가 중단한 지점부터 이어서 재생합니다.
+// (실수로 다른 화면으로 넘어가도 진도가 저장되어 있어 처음부터 다시 듣지 않아도 됩니다)
+export function startListening(words, loop, chapterId) {
   if (!words.length) {
     toast("들을 단어가 없습니다.");
     return;
@@ -95,8 +98,18 @@ export function startListening(words, loop) {
     loop: !!loop,
     shuffled: false,
     finished: false,
+    chapterId: chapterId || null,
   };
-  playListenFrom(0);
+  const savedIndex = loadListenProgress(chapterId);
+  const startIndex = savedIndex > 0 && savedIndex < words.length ? savedIndex : 0;
+  if (startIndex > 0) toast(`이전에 듣던 ${startIndex + 1}번째 단어부터 이어서 재생합니다.`);
+  playListenFrom(startIndex);
+}
+
+// 저장된 진도를 무시하고 처음부터 새로 듣기 시작합니다.
+export function startListeningFromBeginning(words, loop, chapterId) {
+  clearListenProgress(chapterId);
+  startListening(words, loop, chapterId);
 }
 
 function setShuffleListening(on) {
@@ -115,6 +128,7 @@ function playListenFrom(idx) {
     } else {
       LISTEN.playing = false;
       LISTEN.finished = true;
+      clearListenProgress(LISTEN.chapterId);
       renderListening();
     }
     return;
@@ -122,12 +136,14 @@ function playListenFrom(idx) {
   LISTEN.index = idx;
   LISTEN.playing = true;
   LISTEN.finished = false;
+  saveListenProgress(LISTEN.chapterId, idx);
   const queue = buildListenQueueFrom(LISTEN.words, idx);
   queue.forEach((u) => {
     u.onstart = () => {
       if (!LISTEN) return;
       if (LISTEN.index !== u.__wordIndex) {
         LISTEN.index = u.__wordIndex;
+        saveListenProgress(LISTEN.chapterId, LISTEN.index);
         renderListening();
       }
     };
@@ -140,6 +156,7 @@ function playListenFrom(idx) {
     } else {
       LISTEN.playing = false;
       LISTEN.finished = true;
+      clearListenProgress(LISTEN.chapterId);
       renderListening();
     }
   };

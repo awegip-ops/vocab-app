@@ -2,6 +2,7 @@
 const STATE_KEY = "vocabApp_srsState_v1";
 const STREAK_KEY = "vocabApp_streak_v1";
 const CUSTOM_WORDS_KEY = "vocabApp_customWords_v1";
+const LISTEN_PROGRESS_KEY = "vocabApp_listenProgress_v1";
 
 export function loadSrsState() {
   try {
@@ -71,6 +72,35 @@ export function loadCustomWords() {
 
 export function saveCustomWords(words) {
   localStorage.setItem(CUSTOM_WORDS_KEY, JSON.stringify(words));
+}
+
+function loadAllListenProgress() {
+  try {
+    const raw = localStorage.getItem(LISTEN_PROGRESS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+export function loadListenProgress(chapterId) {
+  if (!chapterId) return 0;
+  const all = loadAllListenProgress();
+  return all[chapterId] || 0;
+}
+
+export function saveListenProgress(chapterId, index) {
+  if (!chapterId) return;
+  const all = loadAllListenProgress();
+  all[chapterId] = index;
+  localStorage.setItem(LISTEN_PROGRESS_KEY, JSON.stringify(all));
+}
+
+export function clearListenProgress(chapterId) {
+  if (!chapterId) return;
+  const all = loadAllListenProgress();
+  delete all[chapterId];
+  localStorage.setItem(LISTEN_PROGRESS_KEY, JSON.stringify(all));
 }
 
 export function appendCustomWords(newWords) {

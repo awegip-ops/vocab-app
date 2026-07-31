@@ -137,6 +137,13 @@ button {
   border: 1px solid var(--primary-dark);
 }
 
+.btn-listen-restart {
+  background: transparent;
+  color: var(--primary);
+  margin-top: 8px;
+  border: 1px solid var(--primary);
+}
+
 .btn-danger {
   background: var(--danger);
   color: white;
