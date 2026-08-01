@@ -10,6 +10,17 @@ param(
 $ErrorActionPreference = "Stop"
 $rootFull = (Resolve-Path -LiteralPath $Root).Path
 
+# The launcher starts this script with WScript.Shell's Run (window style
+# hidden) rather than Exec, specifically so no window ever gets created in
+# the first place - on Windows 11, Exec forces a real console to exist (it
+# captures stdio), and Windows Terminal then shows that console as a
+# visible tab regardless of -WindowStyle Hidden. Run has no such window at
+# all, but that means the launcher has no ProcessID to kill later, so this
+# script writes its own PID to a file next to itself for the launcher to
+# read and clean up once the app window closes.
+$pidFile = Join-Path $rootFull ".server-$Port.pid"
+Set-Content -LiteralPath $pidFile -Value $PID -Encoding Ascii
+
 $mimeMap = @{
     ".html"        = "text/html; charset=utf-8"
     ".htm"         = "text/html; charset=utf-8"
