@@ -1,3 +1,7 @@
 @echo off
 cd /d "%~dp0"
-start "" wscript.exe "%~dp0실행.vbs"
+for %%f in ("%~dp0*.vbs") do (
+    start "" wscript.exe "%%~ff"
+    goto :done
+)
+:done
