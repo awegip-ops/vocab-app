@@ -35,7 +35,8 @@
    > service cloud.firestore {
    >   match /databases/{database}/documents {
    >     match /syncCodes/{code} {
-   >       allow read, write: if request.auth != null
+   >       allow create: if request.auth != null;
+   >       allow read, update: if request.auth != null
    >         && (!("updatedAt" in resource.data)
    >             || request.time < resource.data.updatedAt + duration.value(90, 'd'));
    >     }
@@ -46,6 +47,14 @@
    > 위험이 계속 남지 않게 해줍니다. 앱 쪽은 이미 동기화 실패를 조용히 처리하도록(로컬 저장은
    > 그대로 유지) 되어 있어 코드가 만료돼도 앱이 깨지지 않습니다. 적용은 Firebase 콘솔 규칙
    > 탭에서 직접 붙여넣고 게시해야 하며, 계정 로그인이 필요해 대신 해드릴 수 없습니다.
+   >
+   > **주의 (2026-08 수정)**: `allow read, write`로 한 번에 묶고 `resource.data`로 검사하면,
+   > 새 코드를 처음 만드는 순간(문서가 아직 없는 create)에는 `resource`가 아예 없어서 검사
+   > 자체가 에러가 나고 "Missing or insufficient permissions"로 거부됩니다 - 기존 코드로
+   > 연결(read)하는 건 되는데 "새 동기화 코드 만들기"만 항상 실패하는 증상으로 나타납니다.
+   > 위처럼 `create`는 만료 검사 없이 따로 허용하고, `read`/`update`에만 90일 검사를 적용해야
+   > 합니다. 이미 이 버그가 있는 규칙을 게시했다면, Firebase 콘솔 규칙 탭에서 위 수정된
+   > 내용으로 다시 덮어써서 게시하세요.
 5. 왼쪽 메뉴 **빌드 > Authentication** → **시작하기** → **Sign-in method** 탭 → **익명(Anonymous)** 클릭 → 사용 설정 → 저장
 6. 왼쪽 위 톱니바퀴 ⚙️ → **프로젝트 설정** → 아래로 스크롤 **내 앱** → 웹 아이콘(`</>`) 클릭 → 앱 닉네임 입력(예: `web`) → 앱 등록
 7. 화면에 나오는 `firebaseConfig` 객체를 복사
