@@ -2,7 +2,7 @@
 import { escapeHtml, freqBadge, shuffleArray } from "./utils.js?v=1";
 import { root } from "./dom.js?v=1";
 import { toast } from "./ui.js?v=1";
-import { renderHome } from "./views.js?v=2";
+import { renderHome } from "./views.js?v=3";
 import { loadListenProgress, saveListenProgress, clearListenProgress } from "./storage.js?v=1";
 
 let VOICES = [];
@@ -64,7 +64,6 @@ export function isListening() {
 // 그래도 음성이 끊기면 앱으로 돌아왔을 때(또는 몇 초 이상 멈춰 있으면) 현재 단어부터 다시 재생합니다.
 let keepAliveAudio = null;
 let watchdogTimer = null;
-let stalledChecks = 0;
 
 function buildSilentWavUrl() {
   const rate = 8000;
@@ -116,7 +115,6 @@ function stopKeepAlive() {
     clearInterval(watchdogTimer);
     watchdogTimer = null;
   }
-  stalledChecks = 0;
   if ("mediaSession" in navigator) {
     navigator.mediaSession.playbackState = "none";
     navigator.mediaSession.metadata = null;
@@ -150,51 +148,44 @@ function updateMediaSession(word) {
   } catch (_) {}
 }
 
-// 음성이 조용히 멈춰버린 경우(백그라운드에서 브라우저가 중단시킨 경우 등) 현재 단어부터 다시 시작
+// 음성이 조용히 멈춰버린 경우(백그라운드에서 브라우저가 중단시킨 경우 등)
+// 멈춘 바로 그 구간부터 다시 시작합니다.
+const STALL_MS = 5000; // 말하고 있지 않은데 이만큼 진행이 없으면 멈춘 것으로 봄
+const HARD_STALL_MS = 45000; // "말하는 중"이라고 하는데도 이만큼 진행이 없으면 걸린 것으로 봄
 function checkStalled() {
-  if (!LISTEN || !LISTEN.playing || LISTEN.finished) {
-    stalledChecks = 0;
-    return;
-  }
+  if (!LISTEN || !LISTEN.playing || LISTEN.finished || !LISTEN.cur) return;
   const synth = window.speechSynthesis;
   if (keepAliveAudio && keepAliveAudio.paused) keepAliveAudio.play().catch(() => {});
   if (synth.paused) synth.resume();
-  if (!synth.speaking && !synth.pending) {
-    stalledChecks += 1;
-    if (stalledChecks >= 2) {
-      stalledChecks = 0;
-      playListenFrom(LISTEN.index);
-    }
-  } else {
-    stalledChecks = 0;
-  }
+  const idleMs = Date.now() - LISTEN.lastProgress;
+  const stuck = synth.speaking ? idleMs > HARD_STALL_MS : idleMs > STALL_MS;
+  if (stuck) restartCurrentStep();
+}
+
+function restartCurrentStep() {
+  if (!LISTEN || !LISTEN.cur) return;
+  const { wordIdx, step } = LISTEN.cur;
+  LISTEN.gen += 1;
+  window.speechSynthesis.cancel();
+  runStep(wordIdx, step, LISTEN.gen);
 }
 
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") checkStalled();
 });
 
-function buildListenQueueFrom(words, startIndex) {
-  const utterances = [];
-  for (let i = startIndex; i < words.length; i++) {
-    const w = words[i];
-    const meaning = (w.meaning_kr || "").split(/[;,]/)[0].trim();
-    const seq = [
-      makeUtterance(w.headword, "en-US", 0.95),
-      makeUtterance(meaning, "ko-KR", 1),
-      makeUtterance(w.headword, "en-US", 0.95),
-      makeUtterance(meaning, "ko-KR", 1),
-      makeUtterance(w.example_en, "en-US", 0.92),
-      makeUtterance(w.example_kr, "ko-KR", 1),
-      makeUtterance(w.example_en, "en-US", 0.92),
-      makeUtterance(w.example_kr, "ko-KR", 1),
-    ];
-    seq.forEach((u) => {
-      u.__wordIndex = i;
-    });
-    utterances.push(...seq);
-  }
-  return utterances;
+function buildSteps(w) {
+  const meaning = (w.meaning_kr || "").split(/[;,]/)[0].trim();
+  return [
+    [w.headword, "en-US", 0.95],
+    [meaning, "ko-KR", 1],
+    [w.headword, "en-US", 0.95],
+    [meaning, "ko-KR", 1],
+    [w.example_en, "en-US", 0.92],
+    [w.example_kr, "ko-KR", 1],
+    [w.example_en, "en-US", 0.92],
+    [w.example_kr, "ko-KR", 1],
+  ];
 }
 
 // chapterId가 있으면 이전에 듣다가 중단한 지점부터 이어서 재생합니다.
@@ -238,19 +229,80 @@ function setShuffleListening(on) {
   playListenFrom(0);
 }
 
+// 단어 하나(8개 구간)를 한꺼번에 큐에 넣지 않고, 구간 하나가 끝날 때마다 다음 구간을
+// 직접 이어서 말합니다. 백그라운드에서는 브라우저가 큐에 쌓아둔 뒤쪽 구간을 말하지 않고
+// 멈춰버리는 경우가 있어서(소리는 나는데 다음 단어로 안 넘어가는 증상), 매번 "방금 끝났으니
+// 다음 거"를 새로 요청하는 방식이 더 안정적입니다.
+function finishListenPass() {
+  if (!LISTEN) return;
+  if (LISTEN.loop) {
+    playListenFrom(0);
+    return;
+  }
+  LISTEN.playing = false;
+  LISTEN.finished = true;
+  clearListenProgress(LISTEN.chapterId);
+  if (keepAliveAudio) keepAliveAudio.pause();
+  renderListening();
+}
+
+function runStep(wordIdx, step, gen) {
+  if (!LISTEN || LISTEN.gen !== gen) return;
+  if (wordIdx >= LISTEN.words.length) {
+    finishListenPass();
+    return;
+  }
+  const steps = buildSteps(LISTEN.words[wordIdx]);
+  if (step >= steps.length) {
+    runStep(wordIdx + 1, 0, gen);
+    return;
+  }
+  if (wordIdx !== LISTEN.index) {
+    LISTEN.index = wordIdx;
+    saveListenProgress(LISTEN.chapterId, wordIdx);
+    renderListening();
+  }
+  const [text, lang, rate] = steps[step];
+  if (!text) {
+    runStep(wordIdx, step + 1, gen);
+    return;
+  }
+  LISTEN.cur = { wordIdx, step };
+  LISTEN.lastProgress = Date.now();
+
+  const u = makeUtterance(text, lang, rate);
+  let handled = false;
+  const advance = (completed) => {
+    if (handled) return;
+    handled = true;
+    if (!LISTEN || LISTEN.gen !== gen) return;
+    LISTEN.lastProgress = Date.now();
+    const nextStep = completed ? step + 1 : step;
+    if (!LISTEN.playing) {
+      // 일시정지 중에 끊긴 경우(일부 폰은 pause를 취소로 처리) - 재개할 때 여기서부터 이어서 말함
+      LISTEN.resumeAt = { wordIdx, step: nextStep };
+      return;
+    }
+    runStep(wordIdx, nextStep, gen);
+  };
+  u.onstart = () => {
+    if (LISTEN && LISTEN.gen === gen) LISTEN.lastProgress = Date.now();
+  };
+  u.onend = () => advance(true);
+  u.onerror = (e) => {
+    // 우리가 직접 취소한 경우는 gen이 바뀌어 무시됨. 그 외 오류는 같은 구간을 한 번 더 시도
+    advance(e && (e.error === "canceled" || e.error === "interrupted") ? false : true);
+  };
+  window.speechSynthesis.speak(u);
+}
+
 function playListenFrom(idx) {
   if (!LISTEN) return;
+  LISTEN.gen = (LISTEN.gen || 0) + 1;
+  LISTEN.resumeAt = null;
   window.speechSynthesis.cancel();
   if (idx >= LISTEN.words.length) {
-    if (LISTEN.loop) {
-      playListenFrom(0);
-    } else {
-      LISTEN.playing = false;
-      LISTEN.finished = true;
-      clearListenProgress(LISTEN.chapterId);
-      if (keepAliveAudio) keepAliveAudio.pause();
-      renderListening();
-    }
+    finishListenPass();
     return;
   }
   LISTEN.index = idx;
@@ -258,38 +310,14 @@ function playListenFrom(idx) {
   LISTEN.finished = false;
   if (keepAliveAudio && keepAliveAudio.paused) keepAliveAudio.play().catch(() => {});
   saveListenProgress(LISTEN.chapterId, idx);
-  const queue = buildListenQueueFrom(LISTEN.words, idx);
-  queue.forEach((u) => {
-    u.onstart = () => {
-      if (!LISTEN) return;
-      if (LISTEN.index !== u.__wordIndex) {
-        LISTEN.index = u.__wordIndex;
-        saveListenProgress(LISTEN.chapterId, LISTEN.index);
-        renderListening();
-      }
-    };
-  });
-  const last = queue[queue.length - 1];
-  last.onend = () => {
-    if (!LISTEN) return;
-    if (LISTEN.loop) {
-      playListenFrom(0);
-    } else {
-      LISTEN.playing = false;
-      LISTEN.finished = true;
-      clearListenProgress(LISTEN.chapterId);
-      if (keepAliveAudio) keepAliveAudio.pause();
-      renderListening();
-    }
-  };
-  queue.forEach((u) => window.speechSynthesis.speak(u));
   renderListening();
+  runStep(idx, 0, LISTEN.gen);
 }
 
 function pauseListening() {
   if (!LISTEN) return;
-  window.speechSynthesis.pause();
   LISTEN.playing = false;
+  window.speechSynthesis.pause();
   if (keepAliveAudio) keepAliveAudio.pause();
   renderListening();
 }
@@ -297,8 +325,19 @@ function pauseListening() {
 function resumeListening() {
   if (!LISTEN) return;
   if (keepAliveAudio) keepAliveAudio.play().catch(() => {});
-  window.speechSynthesis.resume();
   LISTEN.playing = true;
+  const synth = window.speechSynthesis;
+  if (LISTEN.resumeAt) {
+    const { wordIdx, step } = LISTEN.resumeAt;
+    LISTEN.resumeAt = null;
+    LISTEN.gen += 1;
+    synth.cancel();
+    renderListening();
+    runStep(wordIdx, step, LISTEN.gen);
+    return;
+  }
+  synth.resume();
+  LISTEN.lastProgress = Date.now();
   renderListening();
 }
 

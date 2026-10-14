@@ -4,8 +4,8 @@
 import { state, rebuildHeadwordMap } from "./state.js?v=1";
 import * as Storage from "./storage.js";
 import * as Sync from "./sync.js?v=2";
-import { isListening } from "./tts.js?v=2";
-import { renderHome, renderStats } from "./views.js?v=2";
+import { isListening } from "./tts.js?v=3";
+import { renderHome, renderStats } from "./views.js?v=3";
 
 export function collectLocalState() {
   return {

@@ -5,9 +5,9 @@ import { showConfirm, toast } from "./ui.js?v=1";
 import { state, getRecord, ensureRecord } from "./state.js?v=1";
 import * as SRS from "./srs.js";
 import * as Storage from "./storage.js";
-import { syncPush } from "./sync-bridge.js?v=2";
-import { speak } from "./tts.js?v=2";
-import { renderHome, renderGlossedSentence } from "./views.js?v=2";
+import { syncPush } from "./sync-bridge.js?v=3";
+import { speak } from "./tts.js?v=3";
+import { renderHome, renderGlossedSentence } from "./views.js?v=3";
 
 export function startSession(words) {
   if (!words.length) {
