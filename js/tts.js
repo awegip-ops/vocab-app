@@ -2,7 +2,7 @@
 import { escapeHtml, freqBadge, shuffleArray } from "./utils.js?v=1";
 import { root } from "./dom.js?v=1";
 import { toast } from "./ui.js?v=1";
-import { renderHome } from "./views.js?v=3";
+import { renderHome } from "./views.js?v=4";
 import { loadListenProgress, saveListenProgress, clearListenProgress } from "./storage.js?v=1";
 
 let VOICES = [];
@@ -54,6 +54,150 @@ let LISTEN = null; // { words, originalWords, index, playing, loop, shuffled, fi
 
 export function isListening() {
   return !!LISTEN;
+}
+
+// ---- 오디오 파일 재생 모드 ----
+// speechSynthesis는 휴대폰에서 앱이 화면 뒤로 가면(네비 앱 등) 소리를 아예 내지 않습니다.
+// scripts/make_audio.py로 파트별 mp3를 미리 만들어 두면(audio/ 폴더 + manifest.json),
+// 그 파트는 실제 오디오로 재생해서 백그라운드/화면 꺼짐 상태에서도 음악 앱처럼 계속 재생됩니다.
+// 오디오가 없는 파트(또는 오늘 단어 듣기, 랜덤 순서)는 기존 음성 합성으로 재생합니다.
+let audioManifest = null;
+
+async function loadAudioManifest() {
+  try {
+    const res = await fetch("audio/manifest.json");
+    if (res.ok) audioManifest = await res.json();
+  } catch (_) {
+    // 오디오 목록을 못 받아도 음성 합성으로 그대로 동작합니다.
+  }
+}
+loadAudioManifest();
+
+// 이 파트의 단어 구성(id 순서)이 오디오를 만들 때와 같을 때만 오디오를 씁니다.
+function findAudioEntry(chapterId, words) {
+  const entry = audioManifest && chapterId && audioManifest.parts && audioManifest.parts[chapterId];
+  if (!entry || entry.ids.length !== words.length) return null;
+  for (let i = 0; i < words.length; i++) {
+    if (entry.ids[i] !== words[i].id) return null;
+  }
+  return entry;
+}
+
+function startAudioMode(entry, startIndex) {
+  const el = new Audio(`audio/${entry.file}`);
+  el.preload = "auto";
+  el.loop = LISTEN.loop;
+  LISTEN.audio = { el, entry };
+  LISTEN.index = startIndex;
+  LISTEN.playing = true;
+  LISTEN.finished = false;
+  const isCurrent = () => LISTEN && LISTEN.audio && LISTEN.audio.el === el;
+
+  if (startIndex > 0) {
+    el.addEventListener(
+      "loadedmetadata",
+      () => {
+        if (isCurrent()) el.currentTime = entry.starts[startIndex];
+      },
+      { once: true }
+    );
+  }
+  el.addEventListener("timeupdate", () => {
+    if (!isCurrent()) return;
+    const t = el.currentTime + 0.05;
+    const starts = entry.starts;
+    let lo = 0;
+    let hi = starts.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (starts[mid] <= t) lo = mid;
+      else hi = mid - 1;
+    }
+    if (lo !== LISTEN.index) {
+      LISTEN.index = lo;
+      saveListenProgress(LISTEN.chapterId, lo);
+      renderListening();
+    }
+  });
+  el.addEventListener("ended", () => {
+    if (!isCurrent()) return;
+    if (LISTEN.loop) {
+      el.currentTime = 0;
+      el.play().catch(() => {});
+      return;
+    }
+    LISTEN.playing = false;
+    LISTEN.finished = true;
+    clearListenProgress(LISTEN.chapterId);
+    renderListening();
+  });
+  // 통화/네비 안내 등으로 OS가 재생을 멈추거나 다시 시작하면 화면 상태도 맞춰 줍니다.
+  el.addEventListener("pause", () => {
+    if (isCurrent() && !el.ended && LISTEN.playing) {
+      LISTEN.playing = false;
+      renderListening();
+    }
+  });
+  el.addEventListener("play", () => {
+    if (isCurrent() && !LISTEN.playing) {
+      LISTEN.playing = true;
+      LISTEN.finished = false;
+      renderListening();
+    }
+  });
+  el.addEventListener("error", () => {
+    if (isCurrent()) fallbackToSpeech("오디오 파일을 불러오지 못해 음성 합성으로 재생합니다.");
+  });
+
+  setupMediaSession();
+  renderListening();
+  el.play().catch(() => {
+    if (isCurrent()) {
+      LISTEN.playing = false;
+      renderListening();
+    }
+  });
+}
+
+function audioSeek(idx) {
+  const { el, entry } = LISTEN.audio;
+  if (idx >= entry.starts.length) {
+    if (LISTEN.loop) {
+      idx = 0;
+    } else {
+      LISTEN.playing = false;
+      LISTEN.finished = true;
+      clearListenProgress(LISTEN.chapterId);
+      el.pause();
+      renderListening();
+      return;
+    }
+  }
+  LISTEN.index = idx;
+  LISTEN.playing = true;
+  LISTEN.finished = false;
+  el.currentTime = entry.starts[idx];
+  el.play().catch(() => {});
+  saveListenProgress(LISTEN.chapterId, idx);
+  renderListening();
+}
+
+function dropAudioMode() {
+  if (!LISTEN || !LISTEN.audio) return;
+  const { el } = LISTEN.audio;
+  LISTEN.audio = null; // 먼저 비워서 아래 정리 중 발생하는 이벤트가 무시되게 함
+  el.pause();
+  el.removeAttribute("src");
+  el.load();
+}
+
+function fallbackToSpeech(message) {
+  if (!LISTEN) return;
+  const idx = LISTEN.index;
+  dropAudioMode();
+  if (message) toast(message);
+  startKeepAlive();
+  playListenFrom(idx);
 }
 
 // ---- 백그라운드 재생 유지 ----
@@ -153,7 +297,7 @@ function updateMediaSession(word) {
 const STALL_MS = 5000; // 말하고 있지 않은데 이만큼 진행이 없으면 멈춘 것으로 봄
 const HARD_STALL_MS = 45000; // "말하는 중"이라고 하는데도 이만큼 진행이 없으면 걸린 것으로 봄
 function checkStalled() {
-  if (!LISTEN || !LISTEN.playing || LISTEN.finished || !LISTEN.cur) return;
+  if (!LISTEN || LISTEN.audio || !LISTEN.playing || LISTEN.finished || !LISTEN.cur) return;
   const synth = window.speechSynthesis;
   if (keepAliveAudio && keepAliveAudio.paused) keepAliveAudio.play().catch(() => {});
   if (synth.paused) synth.resume();
@@ -212,6 +356,11 @@ export function startListening(words, loop, chapterId) {
   const savedIndex = loadListenProgress(chapterId);
   const startIndex = savedIndex > 0 && savedIndex < words.length ? savedIndex : 0;
   if (startIndex > 0) toast(`이전에 듣던 ${startIndex + 1}번째 단어부터 이어서 재생합니다.`);
+  const audioEntry = findAudioEntry(chapterId, words);
+  if (audioEntry) {
+    startAudioMode(audioEntry, startIndex);
+    return;
+  }
   startKeepAlive(); // 버튼 클릭 직후에 시작해야 브라우저가 오디오 재생을 허용합니다
   playListenFrom(startIndex);
 }
@@ -224,6 +373,12 @@ export function startListeningFromBeginning(words, loop, chapterId) {
 
 function setShuffleListening(on) {
   if (!LISTEN) return;
+  if (LISTEN.audio) {
+    // 오디오 파일은 정해진 순서라 섞을 수 없어서, 랜덤 순서는 음성 합성으로 재생합니다.
+    dropAudioMode();
+    toast("랜덤 순서는 음성 합성으로 재생됩니다 (앱 밖에서는 소리가 안 날 수 있어요).");
+    startKeepAlive();
+  }
   LISTEN.shuffled = on;
   LISTEN.words = on ? shuffleArray(LISTEN.originalWords) : LISTEN.originalWords.slice();
   playListenFrom(0);
@@ -298,6 +453,10 @@ function runStep(wordIdx, step, gen) {
 
 function playListenFrom(idx) {
   if (!LISTEN) return;
+  if (LISTEN.audio) {
+    audioSeek(idx);
+    return;
+  }
   LISTEN.gen = (LISTEN.gen || 0) + 1;
   LISTEN.resumeAt = null;
   window.speechSynthesis.cancel();
@@ -316,6 +475,12 @@ function playListenFrom(idx) {
 
 function pauseListening() {
   if (!LISTEN) return;
+  if (LISTEN.audio) {
+    LISTEN.playing = false;
+    LISTEN.audio.el.pause();
+    renderListening();
+    return;
+  }
   LISTEN.playing = false;
   window.speechSynthesis.pause();
   if (keepAliveAudio) keepAliveAudio.pause();
@@ -324,6 +489,12 @@ function pauseListening() {
 
 function resumeListening() {
   if (!LISTEN) return;
+  if (LISTEN.audio) {
+    LISTEN.playing = true;
+    LISTEN.audio.el.play().catch(() => {});
+    renderListening();
+    return;
+  }
   if (keepAliveAudio) keepAliveAudio.play().catch(() => {});
   LISTEN.playing = true;
   const synth = window.speechSynthesis;
@@ -358,6 +529,7 @@ function prevListening() {
 
 export function stopListening() {
   if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+  dropAudioMode();
   LISTEN = null;
   stopKeepAlive();
 }
@@ -368,7 +540,9 @@ function renderListening() {
   const statusText = LISTEN.finished
     ? "🎉 재생 완료"
     : LISTEN.playing
-    ? "🔊 재생 중... (다른 앱으로 넘어가도 이어서 재생을 시도합니다)"
+    ? LISTEN.audio
+      ? "🔊 재생 중... (오디오 파일 재생 · 다른 앱으로 넘어가도 계속 재생됩니다)"
+      : "🔊 재생 중... (이 파트는 오디오 파일이 없어, 앱 밖에서는 소리가 안 날 수 있어요)"
     : "⏸ 일시정지";
   updateMediaSession(word);
 
@@ -413,7 +587,9 @@ function renderListening() {
     else resumeListening();
   });
   document.getElementById("chk-listen-loop").addEventListener("change", (e) => {
-    if (LISTEN) LISTEN.loop = e.target.checked;
+    if (!LISTEN) return;
+    LISTEN.loop = e.target.checked;
+    if (LISTEN.audio) LISTEN.audio.el.loop = LISTEN.loop;
   });
   document.getElementById("chk-listen-shuffle").addEventListener("change", (e) => {
     setShuffleListening(e.target.checked);

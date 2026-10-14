@@ -7,7 +7,7 @@
 // 값과 항상 동일해야 합니다. 그 중 하나라도 바꾸면 CACHE_VERSION도 함께 올려서
 // 이전 버전이 섞인 캐시를 전부 폐기하세요. (버전이 어긋나면 프리캐시 항목이
 // 실제 요청 URL과 매칭되지 않아 캐시 무효화가 되지 않는 채로 쌓입니다.)
-const CACHE_VERSION = "v6";
+const CACHE_VERSION = "v7";
 const CACHE_NAME = `vocab-cache-${CACHE_VERSION}`;
 
 const CORE_ASSETS = [
@@ -15,15 +15,15 @@ const CORE_ASSETS = [
   "./index.html",
   "./manifest.json",
   "./css/style.css?v=13",
-  "./js/app.js?v=16",
+  "./js/app.js?v=17",
   "./js/state.js?v=1",
   "./js/utils.js?v=1",
   "./js/dom.js?v=1",
   "./js/ui.js?v=1",
-  "./js/sync-bridge.js?v=3",
-  "./js/tts.js?v=3",
-  "./js/views.js?v=3",
-  "./js/study.js?v=3",
+  "./js/sync-bridge.js?v=4",
+  "./js/tts.js?v=4",
+  "./js/views.js?v=4",
+  "./js/study.js?v=4",
   "./js/srs.js",
   "./js/storage.js",
   "./js/sync.js?v=2",
@@ -62,6 +62,9 @@ self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
   if (new URL(req.url).origin !== self.location.origin) return;
+  // 듣기 모드 오디오(mp3)는 파트당 수 MB에 구간 요청(Range)으로 재생되므로 캐시에 쌓지 않고
+  // 브라우저가 직접 받아 스트리밍하게 둡니다.
+  if (/\/audio\/[^/]+\.mp3$/.test(new URL(req.url).pathname)) return;
 
   event.respondWith(
     fetch(req)

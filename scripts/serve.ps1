@@ -36,6 +36,7 @@ $mimeMap = @{
     ".ico"         = "image/x-icon"
     ".txt"         = "text/plain; charset=utf-8"
     ".md"          = "text/markdown; charset=utf-8"
+    ".mp3"         = "audio/mpeg"
     ".woff"        = "font/woff"
     ".woff2"       = "font/woff2"
 }
@@ -67,14 +68,61 @@ while ($listener.IsListening) {
             $ext = [IO.Path]::GetExtension($filePath).ToLowerInvariant()
             $contentType = $mimeMap[$ext]
             if (-not $contentType) { $contentType = "application/octet-stream" }
-            $bytes = [IO.File]::ReadAllBytes($filePath)
             $response.ContentType = $contentType
-            $response.ContentLength64 = $bytes.Length
-            $response.OutputStream.Write($bytes, 0, $bytes.Length)
+            # Audio needs byte-range support or the browser can't seek (the listen-mode
+            # audio jumps between words by seeking) - same thing GitHub Pages does.
+            $response.AddHeader("Accept-Ranges", "bytes")
+            $fileLength = (Get-Item -LiteralPath $filePath).Length
+            $rangeHeader = $request.Headers["Range"]
+            $start = 0
+            $end = $fileLength - 1
+            $partial = $false
+            if ($rangeHeader -match '^bytes=(\d*)-(\d*)$') {
+                if ($Matches[1] -ne "") {
+                    $start = [long]$Matches[1]
+                    if ($Matches[2] -ne "") { $end = [Math]::Min([long]$Matches[2], $fileLength - 1) }
+                } elseif ($Matches[2] -ne "") {
+                    $start = [Math]::Max(0, $fileLength - [long]$Matches[2])
+                }
+                $partial = $true
+            }
+            if ($partial -and ($start -gt $end -or $start -ge $fileLength)) {
+                $response.StatusCode = 416
+                $response.AddHeader("Content-Range", "bytes */$fileLength")
+            } elseif ($partial) {
+                $count = $end - $start + 1
+                $response.StatusCode = 206
+                $response.AddHeader("Content-Range", "bytes $start-$end/$fileLength")
+                $response.ContentLength64 = $count
+                if ($request.HttpMethod -ne "HEAD") {
+                    $stream = [IO.File]::OpenRead($filePath)
+                    try {
+                        [void]$stream.Seek($start, [IO.SeekOrigin]::Begin)
+                        $buffer = New-Object byte[] 65536
+                        $remaining = $count
+                        while ($remaining -gt 0) {
+                            $read = $stream.Read($buffer, 0, [int][Math]::Min($buffer.Length, $remaining))
+                            if ($read -le 0) { break }
+                            $response.OutputStream.Write($buffer, 0, $read)
+                            $remaining -= $read
+                        }
+                    } finally {
+                        $stream.Dispose()
+                    }
+                }
+            } else {
+                $response.ContentLength64 = $fileLength
+                if ($request.HttpMethod -ne "HEAD") {
+                    $bytes = [IO.File]::ReadAllBytes($filePath)
+                    $response.OutputStream.Write($bytes, 0, $bytes.Length)
+                }
+            }
         }
     } catch {
+        # Browsers routinely abort media requests mid-transfer (every seek does), which
+        # surfaces here as a write error - not worth taking the whole server down.
         try { $response.StatusCode = 500 } catch {}
     } finally {
-        $response.OutputStream.Close()
+        try { $response.OutputStream.Close() } catch {}
     }
 }

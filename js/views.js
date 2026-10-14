@@ -16,9 +16,9 @@ import {
   reviewPoolInfo,
   buildReviewQueue,
 } from "./state.js?v=1";
-import { collectLocalState, mergeRemoteState, syncPush, refreshIfIdle } from "./sync-bridge.js?v=3";
-import { speak, startListening, startListeningFromBeginning } from "./tts.js?v=3";
-import { startSession } from "./study.js?v=3";
+import { collectLocalState, mergeRemoteState, syncPush, refreshIfIdle } from "./sync-bridge.js?v=4";
+import { speak, startListening, startListeningFromBeginning } from "./tts.js?v=4";
+import { startSession } from "./study.js?v=4";
 
 const PART_SIZE = 100;
 
