@@ -2,8 +2,8 @@
 // 렌더링은 views.js/study.js/tts.js, 상태는 state.js, 동기화는 sync-bridge.js 참고.
 import * as Storage from "./storage.js";
 import { state, rebuildHeadwordMap } from "./state.js?v=1";
-import { renderHome } from "./views.js?v=1";
-import { initSync } from "./sync-bridge.js?v=1";
+import { renderHome } from "./views.js?v=2";
+import { initSync } from "./sync-bridge.js?v=2";
 import { toast } from "./ui.js?v=1";
 
 async function init() {
